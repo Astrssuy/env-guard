@@ -12,6 +12,6 @@ describe("assertEnv and version", () => {
   });
 
   it("exports package version", () => {
-    expect(VERSION).toBe("0.3.0");
+    expect(VERSION).toBe("0.4.0");
   });
 });

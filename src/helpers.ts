@@ -1,11 +1,17 @@
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import type { EnvField, EnvSchema } from "./types.js";
 
 export function isEmpty(value: string | undefined): value is undefined | "" {
   return value === undefined || value === "";
 }
 
-export function resolveEnvKey(key: string, prefix?: string): string {
+export function maskSecret(value: string): string {
+  if (value.length <= 4) return "****";
+  return `${value.slice(0, 2)}****${value.slice(-2)}`;
+}
+
+export function resolveEnvKey(key: string, prefix?: string, envKey?: string): string {
+  if (envKey) return envKey;
   return prefix ? `${prefix}${key}` : key;
 }
 
@@ -14,6 +20,7 @@ function exampleValue(field: EnvField): string {
     case "string":
       return field.default ?? "your-value";
     case "number":
+    case "integer":
       return String(field.default ?? 3000);
     case "boolean":
       return String(field.default ?? false);
@@ -29,6 +36,12 @@ function exampleValue(field: EnvField): string {
       return JSON.stringify(field.default ?? { key: "value" });
     case "port":
       return String(field.default ?? 3000);
+    case "duration":
+      return field.default !== undefined ? `${field.default}ms` : "30s";
+    case "uuid":
+      return field.default ?? "00000000-0000-4000-8000-000000000000";
+    case "secret":
+      return field.default ?? "your-secret-key";
     default:
       return "value";
   }
@@ -36,11 +49,12 @@ function exampleValue(field: EnvField): string {
 
 export function generateEnvExample(schema: EnvSchema, options: { prefix?: string } = {}): string {
   const lines = Object.entries(schema).map(([key, field]) => {
-    const envKey = resolveEnvKey(key, options.prefix);
+    const envKey = resolveEnvKey(key, options.prefix, field.envKey);
     const required = field.required !== false && field.default === undefined;
     const desc = field.description ? ` — ${field.description}` : "";
+    const deprecated = field.deprecated ? " [deprecated]" : "";
     const comment = required ? " (required)" : field.default !== undefined ? " (optional)" : "";
-    return `# ${key}${comment}${desc}\n${envKey}=${exampleValue(field)}`;
+    return `# ${key}${comment}${desc}${deprecated}\n${envKey}=${exampleValue(field)}`;
   });
 
   return `${lines.join("\n\n")}\n`;
@@ -80,11 +94,39 @@ export function loadEnvFile(path: string): Record<string, string> {
   return parseEnvContent(readFileSync(path, "utf-8"));
 }
 
+export function loadEnvFiles(paths: string[]): Record<string, string> {
+  const merged: Record<string, string> = {};
+
+  for (const path of paths) {
+    if (existsSync(path)) {
+      Object.assign(merged, loadEnvFile(path));
+    }
+  }
+
+  return merged;
+}
+
 export function mergeSchemas<A extends EnvSchema, B extends EnvSchema>(
   first: A,
   second: B,
+): A & B;
+export function mergeSchemas(schemas: EnvSchema[]): EnvSchema;
+export function mergeSchemas<A extends EnvSchema, B extends EnvSchema>(
+  first: A | EnvSchema[],
+  second?: B,
+): EnvSchema | (A & B) {
+  if (Array.isArray(first)) {
+    return first.reduce<EnvSchema>((acc, schema) => ({ ...acc, ...schema }), {});
+  }
+
+  return { ...first, ...second! };
+}
+
+export function extendSchema<A extends EnvSchema, B extends EnvSchema>(
+  base: A,
+  extension: B,
 ): A & B {
-  return { ...first, ...second };
+  return mergeSchemas(base, extension);
 }
 
 export function pickSchema<T extends EnvSchema, K extends keyof T>(
@@ -112,4 +154,8 @@ export function omitSchema<T extends EnvSchema, K extends keyof T>(
   }
 
   return result;
+}
+
+export function getSchemaEnvKeys(schema: EnvSchema, prefix?: string): string[] {
+  return Object.entries(schema).map(([key, field]) => resolveEnvKey(key, prefix, field.envKey));
 }

@@ -4,6 +4,9 @@ export interface FieldCommon {
   required?: boolean;
   description?: string;
   validate?: (value: unknown) => string | void;
+  transform?: (value: unknown) => unknown;
+  envKey?: string;
+  deprecated?: string | boolean;
 }
 
 export interface StringField extends FieldCommon {
@@ -21,6 +24,13 @@ export interface NumberField extends FieldCommon {
   min?: number;
   max?: number;
   integer?: boolean;
+}
+
+export interface IntegerField extends FieldCommon {
+  type: "integer";
+  default?: number;
+  min?: number;
+  max?: number;
 }
 
 export interface BooleanField extends FieldCommon {
@@ -63,16 +73,37 @@ export interface PortField extends FieldCommon {
   default?: number;
 }
 
+export interface DurationField extends FieldCommon {
+  type: "duration";
+  default?: number;
+  unit?: "ms" | "s" | "m" | "h" | "d";
+}
+
+export interface UuidField extends FieldCommon {
+  type: "uuid";
+  default?: string;
+}
+
+export interface SecretField extends FieldCommon {
+  type: "secret";
+  default?: string;
+  minLength?: number;
+}
+
 export type EnvField =
   | StringField
   | NumberField
+  | IntegerField
   | BooleanField
   | EnumField<readonly string[]>
   | UrlField
   | ArrayField
   | EmailField
   | JsonField
-  | PortField;
+  | PortField
+  | DurationField
+  | UuidField
+  | SecretField;
 
 export type EnvSchema = Record<string, EnvField>;
 
@@ -80,21 +111,29 @@ type InferField<T extends EnvField> = T extends StringField
   ? string
   : T extends NumberField
     ? number
-    : T extends BooleanField
-      ? boolean
-      : T extends EnumField<infer V>
-        ? V[number]
-        : T extends UrlField
-          ? string
-          : T extends ArrayField
-            ? string[]
-            : T extends EmailField
-              ? string
-              : T extends JsonField
-                ? unknown
-                : T extends PortField
-                  ? number
-                  : never;
+    : T extends IntegerField
+      ? number
+      : T extends BooleanField
+        ? boolean
+        : T extends EnumField<infer V>
+          ? V[number]
+          : T extends UrlField
+            ? string
+            : T extends ArrayField
+              ? string[]
+              : T extends EmailField
+                ? string
+                : T extends JsonField
+                  ? unknown
+                  : T extends PortField
+                    ? number
+                    : T extends DurationField
+                      ? number
+                      : T extends UuidField
+                        ? string
+                        : T extends SecretField
+                          ? string
+                          : never;
 
 export type InferEnv<T extends EnvSchema> = {
   [K in keyof T]: InferField<T[K]>;
@@ -104,6 +143,26 @@ export interface EnvValidationIssue {
   key: string;
   message: string;
   description?: string;
+}
+
+export interface EnvOptions {
+  source?: EnvSource;
+  prefix?: string;
+  envFiles?: string[];
+  onValidationError?: (error: EnvValidationError) => void;
+  onDeprecated?: (key: string, message: string) => void;
+}
+
+export type SafeEnvResult<T extends EnvSchema> =
+  | { success: true; data: InferEnv<T> }
+  | { success: false; error: EnvValidationError };
+
+export interface EnvDiffResult {
+  valid: boolean;
+  issues: EnvValidationIssue[];
+  missing: string[];
+  invalid: string[];
+  present: string[];
 }
 
 export function formatIssues(issues: EnvValidationIssue[]): string {
@@ -131,4 +190,8 @@ export class EnvValidationError extends Error {
       issues: this.issues,
     };
   }
+}
+
+export function defineSchema<const T extends EnvSchema>(schema: T): T {
+  return schema;
 }

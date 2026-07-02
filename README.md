@@ -143,6 +143,39 @@ PORT: { type: "port", default: 3000 }
 
 Atajo para puertos TCP válidos (entero entre 1 y 65535).
 
+### `duration`
+
+```ts
+TIMEOUT: { type: "duration", default: 30000 }
+CACHE_TTL: { type: "duration" }  // "30s", "5m", "1h", "2d"
+```
+
+Convierte duraciones legibles a milisegundos.
+
+### `uuid`
+
+```ts
+INSTANCE_ID: { type: "uuid", required: true }
+```
+
+Valida formato UUID v4.
+
+### `secret`
+
+```ts
+API_KEY: { type: "secret", minLength: 32 }
+```
+
+Para claves sensibles. Los errores enmascaran el valor (`ab****cd`).
+
+### `integer`
+
+```ts
+WORKERS: { type: "integer", min: 1, max: 16 }
+```
+
+Enteros sin decimales, alternativa clara a `number` + `integer: true`.
+
 ### Descripciones y validación custom
 
 Todos los tipos aceptan `description` y `validate`:
@@ -210,6 +243,78 @@ const publicConfig = pickSchema(schema, ["PORT", "NODE_ENV"]);
 const withoutSecrets = omitSchema(schema, ["API_KEY"]);
 ```
 
+### Presets y field helpers
+
+Atajos para schemas comunes:
+
+```ts
+import { field, presets, mergeSchemas, defineSchema } from "env-guard";
+
+const schema = defineSchema(
+  mergeSchemas([presets.server, presets.database, presets.auth]),
+);
+
+// O campo a campo:
+const custom = defineSchema({
+  PORT: field.port(),
+  NODE_ENV: field.nodeEnv(),
+  LOG_LEVEL: field.logLevel(),
+  DATABASE_URL: field.databaseUrl(),
+  JWT_SECRET: field.secret({ minLength: 32 }),
+});
+```
+
+### SchemaBuilder (API fluida)
+
+```ts
+import { createSchemaBuilder } from "env-guard";
+
+const schema = createSchemaBuilder()
+  .string("API_KEY", { required: true })
+  .port("PORT")
+  .duration("TIMEOUT", { default: 30_000 })
+  .uuid("INSTANCE_ID")
+  .build();
+```
+
+### createEnvLoader
+
+Factory reutilizable con archivos `.env`:
+
+```ts
+import { createEnvLoader, presets, mergeSchemas } from "env-guard";
+
+const loadConfig = createEnvLoader({
+  envFiles: [".env", ".env.local"],
+  prefix: "APP_",
+  onDeprecated: (key, msg) => console.warn(`${key}: ${msg}`),
+});
+
+export const config = loadConfig.load(mergeSchemas([presets.server, presets.database]));
+```
+
+### envDiff (depuración)
+
+Inspecciona el entorno sin lanzar error:
+
+```ts
+import { envDiff } from "env-guard";
+
+const report = envDiff(schema, { source: process.env });
+console.log("Missing:", report.missing);
+console.log("Invalid:", report.invalid);
+```
+
+### transform, envKey y deprecated
+
+```ts
+{
+  port: { type: "port", envKey: "SERVER_PORT" },       // lee SERVER_PORT
+  tags: { type: "string", transform: (v) => String(v).toUpperCase() },
+  OLD_KEY: { type: "string", deprecated: "Use NEW_KEY" },
+}
+```
+
 ## API
 
 ### `env(schema, options?)`
@@ -220,7 +325,33 @@ Valida y devuelve un objeto tipado. Lanza `EnvValidationError` si algo falla.
 |--------|------|-------------|
 | `source` | `Record<string, string \| undefined>` | Fuente de variables (default: `process.env`) |
 | `prefix` | `string` | Prefijo para los nombres en el entorno |
-| `onValidationError` | `(error: EnvValidationError) => void` | Callback antes de fallar |
+| `envFiles` | `string[]` | Carga automática de archivos `.env` |
+| `onValidationError` | `(error) => void` | Callback antes de fallar |
+| `onDeprecated` | `(key, message) => void` | Aviso de variables deprecadas |
+
+### `envDiff(schema, options?)`
+
+Devuelve `{ valid, issues, missing, invalid, present }` sin lanzar error.
+
+### `createEnvLoader(options?)`
+
+Factory con `.load()` y `.safeLoad()` reutilizables.
+
+### `field` / `presets`
+
+Helpers para definir campos y grupos predefinidos (`server`, `database`, `auth`, `cache`).
+
+### `createSchemaBuilder()`
+
+API fluida para construir schemas paso a paso.
+
+### `defineSchema(schema)`
+
+Helper tipado para inferencia estricta del schema.
+
+### `maskSecret(value)`
+
+Enmascara secretos para logs seguros.
 
 ### `safeEnv(schema, options?)`
 
@@ -349,9 +480,11 @@ env-guard/
 │   ├── types.ts      # Tipos TypeScript y EnvValidationError
 │   ├── helpers.ts    # Utilidades y carga de .env
 │   └── version.ts    # Versión del paquete
-├── tests/            # 33 tests con Vitest
+├── tests/            # 47 tests con Vitest (7 archivos)
 ├── examples/
-│   └── basic.ts      # Ejemplo de uso
+│   ├── basic.ts      # Uso básico
+│   ├── presets.ts    # Presets y loader
+│   └── debug-env.ts  # envDiff para depurar
 ├── CHANGELOG.md
 ├── .github/
 │   └── workflows/

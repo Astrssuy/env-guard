@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-07-02
+
+### Added
+- Types: `duration`, `uuid`, `secret`, `integer`
+- Field options: `transform`, `envKey`, `deprecated`
+- `envDiff()` to inspect missing/invalid variables without throwing
+- `createEnvLoader()` factory with multi-file `.env` support
+- `envFiles` option on `env()` and `safeEnv()`
+- `field` helpers and `presets` (server, database, auth, cache)
+- `SchemaBuilder` fluent API
+- `defineSchema()`, `extendSchema()`, `getSchemaEnvKeys()`, `maskSecret()`
+- `loadEnvFiles()` for multiple env files
+- Variadic `mergeSchemas([a, b, c])`
+- `validate.ts` internal module refactor
+- Examples: `presets.ts`, `debug-env.ts`
+- 47 tests across 7 test files
+
 ## [0.3.0] - 2026-07-02
 
 ### Added

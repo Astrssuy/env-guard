@@ -119,6 +119,46 @@ ALLOWED_ORIGINS: {
 
 Parsea listas separadas por comas: `"http://a.com, http://b.com"` → `["http://a.com", "http://b.com"]`.
 
+### `email`
+
+```ts
+ADMIN_EMAIL: { type: "email", required: true }
+```
+
+Valida formato de correo electrónico.
+
+### `json`
+
+```ts
+FEATURE_FLAGS: { type: "json", default: { beta: false } }
+```
+
+Parsea valores JSON desde strings de entorno.
+
+### `port`
+
+```ts
+PORT: { type: "port", default: 3000 }
+```
+
+Atajo para puertos TCP válidos (entero entre 1 y 65535).
+
+### Descripciones y validación custom
+
+Todos los tipos aceptan `description` y `validate`:
+
+```ts
+API_KEY: {
+  type: "string",
+  required: true,
+  description: "Clave secreta del panel de admin",
+  validate: (value) =>
+    typeof value === "string" && value.startsWith("sk_")
+      ? undefined
+      : "must start with sk_",
+}
+```
+
 ## Opciones
 
 ### Prefijo de variables
@@ -148,6 +188,28 @@ const config = env(
 
 Ideal para tests con Vitest, Jest, etc.
 
+### Cargar archivo `.env`
+
+Sin dependencias externas:
+
+```ts
+import { env, loadEnvFile } from "env-guard";
+
+const config = env(schema, {
+  source: { ...process.env, ...loadEnvFile(".env") },
+});
+```
+
+### Utilidades de schema
+
+```ts
+import { mergeSchemas, pickSchema, omitSchema } from "env-guard";
+
+const serverSchema = mergeSchemas(baseSchema, dbSchema);
+const publicConfig = pickSchema(schema, ["PORT", "NODE_ENV"]);
+const withoutSecrets = omitSchema(schema, ["API_KEY"]);
+```
+
 ## API
 
 ### `env(schema, options?)`
@@ -158,6 +220,7 @@ Valida y devuelve un objeto tipado. Lanza `EnvValidationError` si algo falla.
 |--------|------|-------------|
 | `source` | `Record<string, string \| undefined>` | Fuente de variables (default: `process.env`) |
 | `prefix` | `string` | Prefijo para los nombres en el entorno |
+| `onValidationError` | `(error: EnvValidationError) => void` | Callback antes de fallar |
 
 ### `safeEnv(schema, options?)`
 
@@ -210,6 +273,26 @@ APP_PORT=3000
 APP_DATABASE_URL=https://example.com
 ```
 
+### `loadEnvFile(path)` / `parseEnvContent(content)`
+
+Lee y parsea archivos `.env` nativamente.
+
+### `mergeSchemas(a, b)` / `pickSchema(schema, keys)` / `omitSchema(schema, keys)`
+
+Combina y filtra schemas reutilizables.
+
+### `assertEnv(schema, options?)`
+
+Alias de `env()` para uso en scripts de arranque.
+
+### `formatIssues(issues)`
+
+Formatea errores como texto legible.
+
+### `VERSION`
+
+Constante con la versión actual del paquete.
+
 ### `EnvValidationError`
 
 Error con la propiedad `.issues` para acceso programático:
@@ -219,12 +302,15 @@ try {
   env({ PORT: { type: "number" } }, { source: { PORT: "nope" } });
 } catch (error) {
   if (error instanceof EnvValidationError) {
+    console.error(error.toJSON()); // logging estructurado
     for (const issue of error.issues) {
       console.error(`${issue.key}: ${issue.message}`);
     }
   }
 }
 ```
+
+Ver también [`examples/basic.ts`](./examples/basic.ts) y [`CHANGELOG.md`](./CHANGELOG.md).
 
 ## Ejemplo completo (Express)
 
@@ -258,12 +344,15 @@ app.listen(config.PORT, () => {
 ```
 env-guard/
 ├── src/
-│   ├── index.ts      # API pública: env, safeEnv, generateEnvExample
+│   ├── index.ts      # API pública
 │   ├── parsers.ts    # Lógica de parseo por tipo
 │   ├── types.ts      # Tipos TypeScript y EnvValidationError
-│   └── helpers.ts    # Utilidades internas
-├── tests/
-│   └── env.test.ts   # Tests con Vitest
+│   ├── helpers.ts    # Utilidades y carga de .env
+│   └── version.ts    # Versión del paquete
+├── tests/            # 33 tests con Vitest
+├── examples/
+│   └── basic.ts      # Ejemplo de uso
+├── CHANGELOG.md
 ├── .github/
 │   └── workflows/
 │       └── ci.yml    # CI en Node 18, 20 y 22

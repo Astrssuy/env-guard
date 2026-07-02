@@ -2,11 +2,16 @@ import { isEmpty } from "./helpers.js";
 import type {
   ArrayField,
   BooleanField,
+  EmailField,
   EnumField,
+  JsonField,
   NumberField,
+  PortField,
   StringField,
   UrlField,
 } from "./types.js";
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function assertStringConstraints(value: string, field: StringField): void {
   if (field.minLength !== undefined && value.length < field.minLength) {
@@ -75,6 +80,16 @@ export function parseNumber(_key: string, raw: string | undefined, field: Number
   return value;
 }
 
+export function parsePort(_key: string, raw: string | undefined, field: PortField): number {
+  return parseNumber(_key, raw, {
+    ...field,
+    type: "number",
+    min: 1,
+    max: 65535,
+    integer: true,
+  });
+}
+
 const TRUTHY = new Set(["true", "1", "yes", "on"]);
 const FALSY = new Set(["false", "0", "no", "off"]);
 
@@ -139,6 +154,32 @@ export function parseUrl(_key: string, raw: string | undefined, field: UrlField)
   return raw;
 }
 
+export function parseEmail(_key: string, raw: string | undefined, field: EmailField): string {
+  const value = parseString(_key, raw, { ...field, type: "string" });
+
+  if (value !== "" && !EMAIL_PATTERN.test(value)) {
+    throw new Error(`must be a valid email, got "${value}"`);
+  }
+
+  return value;
+}
+
+export function parseJson(_key: string, raw: string | undefined, field: JsonField): unknown {
+  if (isEmpty(raw)) {
+    if (field.default !== undefined) return field.default;
+    if (field.required !== false) {
+      throw new Error("is required");
+    }
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error(`must be valid JSON, got "${raw}"`);
+  }
+}
+
 export function parseArray(_key: string, raw: string | undefined, field: ArrayField): string[] {
   if (isEmpty(raw)) {
     if (field.default !== undefined) return field.default;
@@ -163,4 +204,13 @@ export function parseArray(_key: string, raw: string | undefined, field: ArrayFi
   }
 
   return items;
+}
+
+export function runCustomValidate(value: unknown, validate?: (value: unknown) => string | void): void {
+  if (!validate) return;
+
+  const result = validate(value);
+  if (typeof result === "string" && result.length > 0) {
+    throw new Error(result);
+  }
 }

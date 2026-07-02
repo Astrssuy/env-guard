@@ -1,17 +1,32 @@
-import { isEmpty } from "./helpers.js";
+import { isEmpty, maskSecret } from "./helpers.js";
 import type {
   ArrayField,
   BooleanField,
+  DurationField,
   EmailField,
   EnumField,
+  IntegerField,
   JsonField,
   NumberField,
   PortField,
+  SecretField,
   StringField,
   UrlField,
+  UuidField,
 } from "./types.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DURATION_PATTERN = /^(\d+(?:\.\d+)?)(ms|s|m|h|d)$/i;
+
+const DURATION_MULTIPLIERS: Record<string, number> = {
+  ms: 1,
+  s: 1_000,
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+};
 
 function assertStringConstraints(value: string, field: StringField): void {
   if (field.minLength !== undefined && value.length < field.minLength) {
@@ -31,8 +46,12 @@ function assertStringConstraints(value: string, field: StringField): void {
   }
 }
 
-function assertNumberConstraints(value: number, field: NumberField): void {
-  if (field.integer && !Number.isInteger(value)) {
+function assertNumberConstraints(value: number, field: NumberField | IntegerField): void {
+  if ("integer" in field && field.integer && !Number.isInteger(value)) {
+    throw new Error(`must be an integer, got "${value}"`);
+  }
+
+  if (field.type === "integer" && !Number.isInteger(value)) {
     throw new Error(`must be an integer, got "${value}"`);
   }
 
@@ -78,6 +97,10 @@ export function parseNumber(_key: string, raw: string | undefined, field: Number
 
   assertNumberConstraints(value, field);
   return value;
+}
+
+export function parseInteger(_key: string, raw: string | undefined, field: IntegerField): number {
+  return parseNumber(_key, raw, { ...field, type: "number", integer: true });
 }
 
 export function parsePort(_key: string, raw: string | undefined, field: PortField): number {
@@ -206,6 +229,68 @@ export function parseArray(_key: string, raw: string | undefined, field: ArrayFi
   return items;
 }
 
+export function parseDuration(
+  _key: string,
+  raw: string | undefined,
+  field: DurationField,
+): number {
+  if (isEmpty(raw)) {
+    if (field.default !== undefined) return field.default;
+    if (field.required !== false) {
+      throw new Error("is required");
+    }
+    return 0;
+  }
+
+  const match = raw.trim().match(DURATION_PATTERN);
+  if (!match) {
+    throw new Error(`must be a duration like 30s, 5m, 1h, got "${raw}"`);
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const multiplier = DURATION_MULTIPLIERS[unit];
+
+  if (!Number.isFinite(amount) || multiplier === undefined) {
+    throw new Error(`must be a valid duration, got "${raw}"`);
+  }
+
+  return Math.round(amount * multiplier);
+}
+
+export function parseUuid(_key: string, raw: string | undefined, field: UuidField): string {
+  const value = parseString(_key, raw, { ...field, type: "string" });
+
+  if (value !== "" && !UUID_PATTERN.test(value)) {
+    throw new Error(`must be a valid UUID, got "${value}"`);
+  }
+
+  return value;
+}
+
+export function parseSecret(_key: string, raw: string | undefined, field: SecretField): string {
+  if (isEmpty(raw)) {
+    if (field.default !== undefined) return field.default;
+    if (field.required !== false) {
+      throw new Error("is required");
+    }
+    return "";
+  }
+
+  const value = raw.trim();
+  if (value === "" && field.required !== false && field.default === undefined) {
+    throw new Error("is required");
+  }
+
+  if (field.minLength !== undefined && value.length < field.minLength) {
+    throw new Error(
+      `must be at least ${field.minLength} characters, got ${maskSecret(value)}`,
+    );
+  }
+
+  return value;
+}
+
 export function runCustomValidate(value: unknown, validate?: (value: unknown) => string | void): void {
   if (!validate) return;
 
@@ -213,4 +298,15 @@ export function runCustomValidate(value: unknown, validate?: (value: unknown) =>
   if (typeof result === "string" && result.length > 0) {
     throw new Error(result);
   }
+}
+
+export function applyTransform(value: unknown, transform?: (value: unknown) => unknown): unknown {
+  if (!transform) return value;
+  return transform(value);
+}
+
+export function getDeprecatedMessage(deprecated: string | boolean | undefined): string | null {
+  if (!deprecated) return null;
+  if (typeof deprecated === "string") return deprecated;
+  return "This variable is deprecated";
 }

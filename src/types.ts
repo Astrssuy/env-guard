@@ -1,8 +1,13 @@
 export type EnvSource = Record<string, string | undefined>;
 
-export interface StringField {
-  type: "string";
+export interface FieldCommon {
   required?: boolean;
+  description?: string;
+  validate?: (value: unknown) => string | void;
+}
+
+export interface StringField extends FieldCommon {
+  type: "string";
   default?: string;
   minLength?: number;
   maxLength?: number;
@@ -10,42 +15,52 @@ export interface StringField {
   trim?: boolean;
 }
 
-export interface NumberField {
+export interface NumberField extends FieldCommon {
   type: "number";
-  required?: boolean;
   default?: number;
   min?: number;
   max?: number;
   integer?: boolean;
 }
 
-export interface BooleanField {
+export interface BooleanField extends FieldCommon {
   type: "boolean";
-  required?: boolean;
   default?: boolean;
 }
 
-export interface EnumField<T extends readonly string[]> {
+export interface EnumField<T extends readonly string[]> extends FieldCommon {
   type: "enum";
   values: T;
-  required?: boolean;
   default?: T[number];
 }
 
-export interface UrlField {
+export interface UrlField extends FieldCommon {
   type: "url";
-  required?: boolean;
   default?: string;
   protocols?: readonly string[];
 }
 
-export interface ArrayField {
+export interface ArrayField extends FieldCommon {
   type: "array";
-  required?: boolean;
   default?: string[];
   separator?: string;
   minItems?: number;
   maxItems?: number;
+}
+
+export interface EmailField extends FieldCommon {
+  type: "email";
+  default?: string;
+}
+
+export interface JsonField extends FieldCommon {
+  type: "json";
+  default?: unknown;
+}
+
+export interface PortField extends FieldCommon {
+  type: "port";
+  default?: number;
 }
 
 export type EnvField =
@@ -54,7 +69,10 @@ export type EnvField =
   | BooleanField
   | EnumField<readonly string[]>
   | UrlField
-  | ArrayField;
+  | ArrayField
+  | EmailField
+  | JsonField
+  | PortField;
 
 export type EnvSchema = Record<string, EnvField>;
 
@@ -70,7 +88,13 @@ type InferField<T extends EnvField> = T extends StringField
           ? string
           : T extends ArrayField
             ? string[]
-            : never;
+            : T extends EmailField
+              ? string
+              : T extends JsonField
+                ? unknown
+                : T extends PortField
+                  ? number
+                  : never;
 
 export type InferEnv<T extends EnvSchema> = {
   [K in keyof T]: InferField<T[K]>;
@@ -79,15 +103,32 @@ export type InferEnv<T extends EnvSchema> = {
 export interface EnvValidationIssue {
   key: string;
   message: string;
+  description?: string;
+}
+
+export function formatIssues(issues: EnvValidationIssue[]): string {
+  return issues
+    .map((issue) => {
+      const label = issue.description ? `${issue.key} (${issue.description})` : issue.key;
+      return `  - ${label}: ${issue.message}`;
+    })
+    .join("\n");
 }
 
 export class EnvValidationError extends Error {
   readonly issues: EnvValidationIssue[];
 
   constructor(issues: EnvValidationIssue[]) {
-    const summary = issues.map((issue) => `  - ${issue.key}: ${issue.message}`).join("\n");
-    super(`Environment validation failed:\n${summary}`);
+    super(`Environment validation failed:\n${formatIssues(issues)}`);
     this.name = "EnvValidationError";
     this.issues = issues;
+  }
+
+  toJSON(): { name: string; message: string; issues: EnvValidationIssue[] } {
+    return {
+      name: this.name,
+      message: this.message,
+      issues: this.issues,
+    };
   }
 }

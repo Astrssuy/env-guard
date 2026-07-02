@@ -4,12 +4,19 @@ export interface StringField {
   type: "string";
   required?: boolean;
   default?: string;
+  minLength?: number;
+  maxLength?: number;
+  pattern?: RegExp | string;
+  trim?: boolean;
 }
 
 export interface NumberField {
   type: "number";
   required?: boolean;
   default?: number;
+  min?: number;
+  max?: number;
+  integer?: boolean;
 }
 
 export interface BooleanField {
@@ -32,12 +39,22 @@ export interface UrlField {
   protocols?: readonly string[];
 }
 
+export interface ArrayField {
+  type: "array";
+  required?: boolean;
+  default?: string[];
+  separator?: string;
+  minItems?: number;
+  maxItems?: number;
+}
+
 export type EnvField =
   | StringField
   | NumberField
   | BooleanField
   | EnumField<readonly string[]>
-  | UrlField;
+  | UrlField
+  | ArrayField;
 
 export type EnvSchema = Record<string, EnvField>;
 
@@ -51,7 +68,9 @@ type InferField<T extends EnvField> = T extends StringField
         ? V[number]
         : T extends UrlField
           ? string
-          : never;
+          : T extends ArrayField
+            ? string[]
+            : never;
 
 export type InferEnv<T extends EnvSchema> = {
   [K in keyof T]: InferField<T[K]>;

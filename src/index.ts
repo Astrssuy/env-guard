@@ -1,4 +1,12 @@
-import { parseBoolean, parseEnum, parseNumber, parseString, parseUrl } from "./parsers.js";
+import { generateEnvExample, resolveEnvKey } from "./helpers.js";
+import {
+  parseArray,
+  parseBoolean,
+  parseEnum,
+  parseNumber,
+  parseString,
+  parseUrl,
+} from "./parsers.js";
 import {
   EnvSchema,
   EnvSource,
@@ -9,6 +17,7 @@ import {
 
 export interface EnvOptions {
   source?: EnvSource;
+  prefix?: string;
 }
 
 export type SafeEnvResult<T extends EnvSchema> =
@@ -18,13 +27,14 @@ export type SafeEnvResult<T extends EnvSchema> =
 function validateEnv<T extends EnvSchema>(
   schema: T,
   source: EnvSource,
+  prefix?: string,
 ): { data: InferEnv<T>; issues: EnvValidationIssue[] } {
   const result = {} as InferEnv<T>;
   const issues: EnvValidationIssue[] = [];
 
   for (const key of Object.keys(schema)) {
     const field = schema[key];
-    const raw = source[key];
+    const raw = source[resolveEnvKey(key, prefix)];
 
     try {
       switch (field.type) {
@@ -43,6 +53,9 @@ function validateEnv<T extends EnvSchema>(
         case "url":
           (result as Record<string, unknown>)[key] = parseUrl(key, raw, field);
           break;
+        case "array":
+          (result as Record<string, unknown>)[key] = parseArray(key, raw, field);
+          break;
         default: {
           const exhaustive: never = field;
           throw new Error(`Unsupported field type for "${key}"`);
@@ -59,7 +72,7 @@ function validateEnv<T extends EnvSchema>(
 
 export function env<T extends EnvSchema>(schema: T, options: EnvOptions = {}): InferEnv<T> {
   const source = options.source ?? process.env;
-  const { data, issues } = validateEnv(schema, source);
+  const { data, issues } = validateEnv(schema, source, options.prefix);
 
   if (issues.length > 0) {
     throw new EnvValidationError(issues);
@@ -73,7 +86,7 @@ export function safeEnv<T extends EnvSchema>(
   options: EnvOptions = {},
 ): SafeEnvResult<T> {
   const source = options.source ?? process.env;
-  const { data, issues } = validateEnv(schema, source);
+  const { data, issues } = validateEnv(schema, source, options.prefix);
 
   if (issues.length > 0) {
     return { success: false, error: new EnvValidationError(issues) };
@@ -82,8 +95,10 @@ export function safeEnv<T extends EnvSchema>(
   return { success: true, data };
 }
 
+export { generateEnvExample } from "./helpers.js";
 export { EnvValidationError } from "./types.js";
 export type {
+  ArrayField,
   BooleanField,
   EnumField,
   EnvField,

@@ -1,30 +1,34 @@
 # env-guard
 
-Validate environment variables at startup with clear, actionable errors.
+Valida variables de entorno al arrancar tu app con errores claros y tipado en TypeScript.
 
-Stop discovering misconfigured `.env` files in production. **env-guard** checks all variables when your app boots and tells you exactly what is missing or invalid.
+Deja de descubrir `.env` mal configurados en producción. **env-guard** revisa todas las variables cuando tu app inicia y te dice exactamente qué falta o qué está mal.
 
-## Problem
+[![CI](https://github.com/Astrssuy/env-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/Astrssuy/env-guard/actions/workflows/ci.yml)
 
-| Without env-guard | With env-guard |
-|-------------------|----------------|
-| App starts, crashes on first request | App refuses to start with a clear error |
-| `PORT=abc` causes cryptic failures | `PORT: must be a number, got "abc"` |
-| Missing `DATABASE_URL` surfaces as `undefined` | `DATABASE_URL: is required` |
-| Fix issues one deploy at a time | See all problems in one message |
+## ¿Por qué usarlo?
 
-## Install
+| Sin env-guard | Con env-guard |
+|---------------|---------------|
+| La app arranca y falla en la primera petición | La app no arranca y muestra un error claro |
+| `PORT=abc` causa errores crípticos | `PORT: must be a number, got "abc"` |
+| `DATABASE_URL` ausente → `undefined` | `DATABASE_URL: is required` |
+| Arreglas un problema por deploy | Ves todos los problemas de una vez |
+
+## Instalación
 
 ```bash
 npm install env-guard
 ```
 
-## Usage
+## Inicio rápido
+
+Crea un archivo `env.ts` en tu proyecto:
 
 ```ts
 import { env } from "env-guard";
 
-const config = env({
+export const config = env({
   PORT: { type: "number", default: 3000 },
   DATABASE_URL: { type: "string", required: true },
   NODE_ENV: {
@@ -33,14 +37,17 @@ const config = env({
   },
   DEBUG: { type: "boolean", default: false },
 });
-
-// config.PORT → number
-// config.DATABASE_URL → string
-// config.NODE_ENV → "development" | "production" | "test"
-// config.DEBUG → boolean
 ```
 
-If validation fails, you get an `EnvValidationError` with every issue at once:
+Úsalo al arrancar:
+
+```ts
+import { config } from "./env.js";
+
+console.log(`Server on port ${config.PORT}`);
+```
+
+Si algo falla, la app lanza un error legible:
 
 ```
 Environment validation failed:
@@ -49,18 +56,88 @@ Environment validation failed:
   - NODE_ENV: must be one of [development, production, test], got "staging"
 ```
 
-## Supported types
+## Tipos soportados
 
-| Type | Example | Notes |
-|------|---------|-------|
-| `string` | `{ type: "string", required: true }` | Empty string counts as missing |
-| `number` | `{ type: "number", default: 8080 }` | Rejects `NaN` and non-numeric values |
-| `boolean` | `{ type: "boolean", default: false }` | Accepts `true/false`, `1/0`, `yes/no`, `on/off` |
-| `enum` | `{ type: "enum", values: ["a", "b"] as const }` | Value must match exactly |
+### `string`
 
-## Testing
+```ts
+API_KEY: { type: "string", required: true }
+SECRET: { type: "string", minLength: 16, maxLength: 64 }
+TOKEN: { type: "string", pattern: "^sk_" }
+```
 
-Pass a custom `source` instead of `process.env`:
+- Las cadenas vacías cuentan como ausentes.
+- Por defecto se hace `.trim()` (desactiva con `trim: false`).
+
+### `number`
+
+```ts
+PORT: { type: "number", default: 8080 }
+WORKERS: { type: "number", min: 1, max: 16, integer: true }
+```
+
+- Rechaza `NaN` y valores no numéricos.
+- `integer: true` exige números enteros.
+
+### `boolean`
+
+```ts
+DEBUG: { type: "boolean", default: false }
+```
+
+Valores aceptados: `true/false`, `1/0`, `yes/no`, `on/off` (sin importar mayúsculas).
+
+### `enum`
+
+```ts
+NODE_ENV: {
+  type: "enum",
+  values: ["development", "production", "test"] as const,
+}
+```
+
+El valor debe coincidir exactamente con uno de la lista.
+
+### `url`
+
+```ts
+DATABASE_URL: { type: "url", required: true, protocols: ["postgres"] }
+APP_URL: { type: "url", default: "http://localhost:3000" }
+```
+
+Valida que sea una URL válida y, opcionalmente, restringe el protocolo.
+
+### `array`
+
+```ts
+ALLOWED_ORIGINS: {
+  type: "array",
+  minItems: 1,
+  separator: ",", // por defecto
+}
+```
+
+Parsea listas separadas por comas: `"http://a.com, http://b.com"` → `["http://a.com", "http://b.com"]`.
+
+## Opciones
+
+### Prefijo de variables
+
+Útil cuando todas tus variables llevan un prefijo común:
+
+```ts
+const config = env(
+  {
+    PORT: { type: "number", default: 3000 },
+    DEBUG: { type: "boolean", default: false },
+  },
+  { prefix: "APP_" }, // lee APP_PORT y APP_DEBUG
+);
+```
+
+### Fuente personalizada (testing)
+
+Pasa un objeto en lugar de `process.env`:
 
 ```ts
 const config = env(
@@ -69,37 +146,156 @@ const config = env(
 );
 ```
 
+Ideal para tests con Vitest, Jest, etc.
+
 ## API
 
 ### `env(schema, options?)`
 
-- **schema** — object describing each environment variable
-- **options.source** — optional record to read from (defaults to `process.env`)
+Valida y devuelve un objeto tipado. Lanza `EnvValidationError` si algo falla.
 
-Returns a typed object inferred from your schema.
+| Opción | Tipo | Descripción |
+|--------|------|-------------|
+| `source` | `Record<string, string \| undefined>` | Fuente de variables (default: `process.env`) |
+| `prefix` | `string` | Prefijo para los nombres en el entorno |
+
+### `safeEnv(schema, options?)`
+
+Igual que `env`, pero **no lanza error**. Devuelve:
+
+```ts
+// Éxito
+{ success: true, data: { PORT: 3000, ... } }
+
+// Fallo
+{ success: false, error: EnvValidationError }
+```
+
+```ts
+import { safeEnv } from "env-guard";
+
+const result = safeEnv({ PORT: { type: "number" } });
+
+if (!result.success) {
+  console.error(result.error.message);
+  process.exit(1);
+}
+
+console.log(result.data.PORT);
+```
+
+### `generateEnvExample(schema, options?)`
+
+Genera contenido para un archivo `.env.example`:
+
+```ts
+import { writeFileSync } from "node:fs";
+import { generateEnvExample } from "env-guard";
+
+const schema = {
+  PORT: { type: "number", default: 3000 },
+  DATABASE_URL: { type: "url", required: true },
+};
+
+writeFileSync(".env.example", generateEnvExample(schema, { prefix: "APP_" }));
+```
+
+Salida:
+
+```env
+# PORT (optional)
+APP_PORT=3000
+
+# DATABASE_URL (required)
+APP_DATABASE_URL=https://example.com
+```
 
 ### `EnvValidationError`
 
-Thrown when one or more variables fail validation. Check `.issues` for structured errors:
+Error con la propiedad `.issues` para acceso programático:
 
 ```ts
 try {
   env({ PORT: { type: "number" } }, { source: { PORT: "nope" } });
 } catch (error) {
   if (error instanceof EnvValidationError) {
-    console.error(error.issues);
+    for (const issue of error.issues) {
+      console.error(`${issue.key}: ${issue.message}`);
+    }
   }
 }
 ```
 
-## Development
+## Ejemplo completo (Express)
 
-```bash
-npm install
-npm test
-npm run build
+```ts
+// env.ts
+import { env } from "env-guard";
+
+export const config = env({
+  PORT: { type: "number", default: 3000 },
+  DATABASE_URL: { type: "url", required: true, protocols: ["postgres"] },
+  CORS_ORIGINS: { type: "array", default: ["http://localhost:3000"] },
+  NODE_ENV: {
+    type: "enum",
+    values: ["development", "production"] as const,
+    default: "development",
+  },
+});
+
+// server.ts
+import express from "express";
+import { config } from "./env.js";
+
+const app = express();
+app.listen(config.PORT, () => {
+  console.log(`Running in ${config.NODE_ENV} on port ${config.PORT}`);
+});
 ```
 
-## License
+## Estructura del proyecto
 
-MIT
+```
+env-guard/
+├── src/
+│   ├── index.ts      # API pública: env, safeEnv, generateEnvExample
+│   ├── parsers.ts    # Lógica de parseo por tipo
+│   ├── types.ts      # Tipos TypeScript y EnvValidationError
+│   └── helpers.ts    # Utilidades internas
+├── tests/
+│   └── env.test.ts   # Tests con Vitest
+├── .github/
+│   └── workflows/
+│       └── ci.yml    # CI en Node 18, 20 y 22
+├── package.json
+├── tsconfig.json
+└── README.md
+```
+
+## Desarrollo local
+
+Requisitos: Node.js >= 18
+
+```bash
+git clone https://github.com/Astrssuy/env-guard.git
+cd env-guard
+npm install
+npm test        # ejecutar tests
+npm run build   # compilar a dist/
+```
+
+### Scripts disponibles
+
+| Script | Descripción |
+|--------|-------------|
+| `npm test` | Ejecuta la suite de tests |
+| `npm run test:watch` | Tests en modo watch |
+| `npm run build` | Compila TypeScript a `dist/` |
+
+## CI
+
+Cada push y pull request ejecuta tests y build en Node 18, 20 y 22 via GitHub Actions.
+
+## Licencia
+
+MIT — ver [LICENSE](./LICENSE).

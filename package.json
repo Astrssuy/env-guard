@@ -1,0 +1,49 @@
+{
+  "name": "env-guard",
+  "version": "0.1.0",
+  "description": "Validate environment variables at startup with clear, actionable errors",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Astrssuy/env-guard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Astrssuy/env-guard/issues"
+  },
+  "homepage": "https://github.com/Astrssuy/env-guard#readme",
+  "keywords": [
+    "env",
+    "environment",
+    "variables",
+    "validation",
+    "config",
+    "typescript",
+    "dotenv"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

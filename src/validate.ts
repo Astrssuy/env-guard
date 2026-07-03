@@ -1,4 +1,4 @@
-import { resolveEnvKey } from "./helpers.js";
+import { getSchemaEnvKeys, resolveEnvKey } from "./helpers.js";
 import {
   applyTransform,
   getDeprecatedMessage,
@@ -27,7 +27,40 @@ import type {
 
 export interface ValidateOptions {
   prefix?: string;
+  strict?: boolean;
   onDeprecated?: (key: string, message: string) => void;
+}
+
+function effectiveField(field: EnvField, source: EnvSource): EnvField {
+  if (field.requiredWhen) {
+    return {
+      ...field,
+      required: field.requiredWhen(source),
+    };
+  }
+  return field;
+}
+
+function collectStrictIssues(
+  schema: EnvSchema,
+  source: EnvSource,
+  prefix?: string,
+): EnvValidationIssue[] {
+  const knownKeys = new Set(getSchemaEnvKeys(schema, prefix));
+  const issues: EnvValidationIssue[] = [];
+
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined || value === "") continue;
+    if (prefix && !key.startsWith(prefix)) continue;
+    if (knownKeys.has(key)) continue;
+
+    issues.push({
+      key,
+      message: "unknown environment variable (strict mode)",
+    });
+  }
+
+  return issues;
 }
 
 export function parseField(
@@ -103,10 +136,16 @@ export function validateEnvInternal<T extends EnvSchema>(
 
   for (const key of Object.keys(schema)) {
     const field = schema[key];
+
+    if (field.skipWhen?.(source)) {
+      continue;
+    }
+
+    const resolved = effectiveField(field, source);
     const raw = source[resolveEnvKey(key, options.prefix, field.envKey)];
 
     try {
-      (result as Record<string, unknown>)[key] = parseField(key, raw, field, options);
+      (result as Record<string, unknown>)[key] = parseField(key, raw, resolved, options);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       issues.push({
@@ -115,6 +154,10 @@ export function validateEnvInternal<T extends EnvSchema>(
         description: field.description,
       });
     }
+  }
+
+  if (options.strict) {
+    issues.push(...collectStrictIssues(schema, source, options.prefix));
   }
 
   return { data: result, issues };
@@ -133,7 +176,9 @@ export function envDiffInternal<T extends EnvSchema>(
 } {
   const { issues } = validateEnvInternal(schema, source, options);
   const missing = issues.filter((issue) => issue.message === "is required").map((issue) => issue.key);
-  const invalid = issues.filter((issue) => issue.message !== "is required").map((issue) => issue.key);
+  const invalid = issues
+    .filter((issue) => issue.message !== "is required")
+    .map((issue) => issue.key);
   const present = Object.keys(schema).filter((key) => !missing.includes(key) && !invalid.includes(key));
 
   return {

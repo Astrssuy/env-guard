@@ -15,6 +15,67 @@ Deja de descubrir `.env` mal configurados en producción. **env-guard** revisa t
 | `DATABASE_URL` ausente → `undefined` | `DATABASE_URL: is required` |
 | Arreglas un problema por deploy | Ves todos los problemas de una vez |
 
+## Para equipos profesionales
+
+env-guard está pensado para **producción**, **CI/CD** y **equipos** que necesitan config confiable sin montar un stack pesado.
+
+| Necesidad | Solución en env-guard |
+|-----------|------------------------|
+| Variables solo en producción | `requiredWhen: (env) => env.NODE_ENV === "production"` |
+| Detectar typos en `.env` | `strict: true` — falla si hay variables desconocidas |
+| No filtrar secretos en logs | `redactForLogging()`, tipo `secret`, `toStructuredLog()` |
+| Validar en CI antes del deploy | `checkEnv()` → exit code 0/1 |
+| Documentación para el equipo | `exportSchemaMarkdown()` → tabla en Markdown |
+| Config singleton al arrancar | `createValidatedEnvModule()` — valida una vez, cachea |
+| Depurar staging sin crash | `envDiff()` + `formatEnvReport()` |
+
+### vs Zod / envalid / t3-env
+
+| | env-guard | Zod + manual | envalid | t3-env |
+|---|-----------|--------------|---------|--------|
+| Hecho para `process.env` | ✅ | ⚠️ manual | ✅ | ✅ Next.js |
+| Sin dependencias runtime | ✅ | ❌ Zod | ✅ | ⚠️ |
+| Presets (`server`, `auth`…) | ✅ | ❌ | ❌ | ❌ |
+| `.env` nativo sin dotenv | ✅ | ❌ | ❌ | ⚠️ |
+| Modo strict (typos) | ✅ | ❌ | ❌ | ❌ |
+| `requiredWhen` / condicional | ✅ | ⚠️ manual | ❌ | ⚠️ |
+
+**Cuándo elegir env-guard:** backend Node, APIs, microservicios, equipos que quieren algo **ligero, tipado y listo para CI** sin acoplarse a Next.js ni aprender otro schema language.
+
+### CI/CD (GitHub Actions)
+
+```yaml
+- name: Validate environment
+  run: npm run check:env
+```
+
+```ts
+// scripts/check-env.ts
+import { checkEnv, mergeSchemas, presets } from "env-guard";
+
+process.exit(checkEnv(mergeSchemas([presets.server, presets.database]), {
+  envFiles: [".env"],
+  strict: true,
+}));
+```
+
+### Producción segura
+
+```ts
+import { createValidatedEnvModule, redactForLogging, field } from "env-guard";
+
+export const configModule = createValidatedEnvModule(schema, {
+  envFiles: [".env", ".env.local"],
+  strict: true,
+  onDeprecated: (key, msg) => console.warn(`[env] ${key}: ${msg}`),
+});
+
+// En logs / health checks — NUNCA loguees config crudo
+console.log("Config:", redactForLogging(configModule.get(), schema));
+```
+
+Ver [`examples/production.ts`](./examples/production.ts) y [`examples/express.ts`](./examples/express.ts).
+
 ## Instalación
 
 ```bash
@@ -332,6 +393,40 @@ Valida y devuelve un objeto tipado. Lanza `EnvValidationError` si algo falla.
 ### `envDiff(schema, options?)`
 
 Devuelve `{ valid, issues, missing, invalid, present }` sin lanzar error.
+
+### `checkEnv(schema, options?)`
+
+Para CI: retorna `0` si válido, `1` si falla. Usar con `process.exit(checkEnv(...))`.
+
+### `validateEnvFiles(schema, paths, options?)`
+
+Valida archivos `.env` sin arrancar la aplicación.
+
+### `createValidatedEnvModule(schema, options?)`
+
+Singleton que valida una vez al boot y cachea el resultado (`.get()`, `.reload()`).
+
+### `redactForLogging(data, schema)` / `redactSourceForLogging(source)`
+
+Enmascara secretos antes de loguear config o variables crudas.
+
+### `exportSchemaMarkdown(schema, options?)`
+
+Genera tabla Markdown para documentación del equipo.
+
+### `formatEnvReport(diff)`
+
+Reporte legible para ops / debugging.
+
+### `requiredWhen` / `skipWhen` / `strict`
+
+```ts
+SENTRY_DSN: field.url({
+  requiredWhen: (env) => env.NODE_ENV === "production",
+}),
+LEGACY: field.string({ skipWhen: (env) => env.USE_V2 === "true" }),
+// options: { strict: true } — falla si hay variables desconocidas
+```
 
 ### `createEnvLoader(options?)`
 

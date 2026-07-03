@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-07-02
+
+### Added (professional / production)
+- `requiredWhen` — variables obligatorias solo en ciertos entornos
+- `skipWhen` — omitir campos según condición
+- `strict` — detectar variables desconocidas (typos en `.env`)
+- `checkEnv()` — exit code 0/1 para CI
+- `validateEnvFiles()` — validar archivos `.env` sin arrancar la app
+- `createValidatedEnvModule()` — singleton cacheado al boot
+- `redactForLogging()` / `redactSourceForLogging()` — logs seguros
+- `exportSchemaMarkdown()` — documentación auto-generada
+- `formatEnvReport()` — reporte legible para ops
+- `EnvValidationError.toStructuredLog()` — integración con observabilidad
+- Script CI: `scripts/check-env.ts` + `npm run check:env`
+- Examples: `production.ts`, `express.ts`
+
 ## [0.4.0] - 2026-07-02
 
 ### Added

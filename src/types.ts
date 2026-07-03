@@ -7,6 +7,10 @@ export interface FieldCommon {
   transform?: (value: unknown) => unknown;
   envKey?: string;
   deprecated?: string | boolean;
+  /** Only required when this returns true (e.g. production-only vars). */
+  requiredWhen?: (source: EnvSource) => boolean;
+  /** Skip validation entirely when this returns true. */
+  skipWhen?: (source: EnvSource) => boolean;
 }
 
 export interface StringField extends FieldCommon {
@@ -149,6 +153,8 @@ export interface EnvOptions {
   source?: EnvSource;
   prefix?: string;
   envFiles?: string[];
+  /** Fail when unknown variables are present (optionally filtered by prefix). */
+  strict?: boolean;
   onValidationError?: (error: EnvValidationError) => void;
   onDeprecated?: (key: string, message: string) => void;
 }
@@ -187,6 +193,21 @@ export class EnvValidationError extends Error {
     return {
       name: this.name,
       message: this.message,
+      issues: this.issues,
+    };
+  }
+
+  /** Structured payload for logging (Datadog, CloudWatch, Sentry, etc.). */
+  toStructuredLog(): {
+    event: "env_validation_failed";
+    error: string;
+    issue_count: number;
+    issues: EnvValidationIssue[];
+  } {
+    return {
+      event: "env_validation_failed",
+      error: this.name,
+      issue_count: this.issues.length,
       issues: this.issues,
     };
   }
